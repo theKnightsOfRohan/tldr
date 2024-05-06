@@ -13,14 +13,16 @@ directory temporarily and try executing it again.
 Usage: python3 scripts/set-more-info-link.py [-p PAGE] [-s] [-S] [-n] [LINK]
 
 Supported Arguments:
-    -p, --page    Specify the page name in the format "platform/command.md".
-                  This option allows setting the link for a specific page.
-    -s, --stage   Stage modified pages for commit. This option requires 'git'
-                  to be on the $PATH and TLDR_ROOT to be a Git repository.
-    -S, --sync    Synchronize each translation's more information link (if
-                  exists) with that of the English page. This is useful to
-                  ensure consistency across translations.
-    -n, --dry-run Show what changes would be made without actually modifying the page.
+    -p, --page PAGE
+        Specify the page name in the format "platform/command.md". This option allows setting the link for a specific page.
+    -l, --language LANGUAGE
+        Specify the language, in the format "fr", for which you want to sync or show any changes.
+    -s, --stage
+        Stage modified pages for commit. This option requires 'git' to be on the $PATH and TLDR_ROOT to be a Git repository.
+    -S, --sync
+        Synchronize each translation's more information link (if exists) with that of the English page. This is useful to ensure consistency across translations.
+    -n, --dry-run
+        Show what changes would be made without actually modifying the page.
 
 Positional Argument:
     LINK          The link to be set as the "More information" link.
@@ -39,6 +41,10 @@ Examples:
     4. Show what changes would be made across translations:
        python3 scripts/set-more-info-link.py -Sn
        python3 scripts/set-more-info-link.py --sync --dry-run
+
+    5. Synchronize more information links across translations for French pages only:
+       python3 scripts/set-more-info-link.py -Sl fr
+       python3 scripts/set-more-info-link.py --sync --language fr
 """
 
 import argparse
@@ -101,7 +107,7 @@ def get_tldr_root() -> Path:
     )
 
 
-def set_link(path: Path, link: str, dry_run=False) -> str:
+def set_link(path: Path, link: str, dry_run=False, language="") -> str:
     with path.open(encoding="utf-8") as f:
         lines = f.readlines()
 
@@ -122,6 +128,8 @@ def set_link(path: Path, link: str, dry_run=False) -> str:
         _, locale = pages_dirname.split(".")
     else:
         locale = "en"
+    if language != "" and locale != language:
+        return ""
 
     # build new line
     if locale in ["bn", "hi", "ne"]:
@@ -187,14 +195,19 @@ def get_link(path: Path) -> str:
 
 
 def sync(
-    root: Path, pages_dirs: list[str], command: str, link: str, dry_run=False
+    root: Path,
+    pages_dirs: list[str],
+    command: str,
+    link: str,
+    dry_run=False,
+    language="",
 ) -> list[str]:
     paths = []
     for page_dir in pages_dirs:
         path = root / page_dir / command
         if path.exists():
             rel_path = "/".join(path.parts[-3:])
-            status = set_link(path, link, dry_run)
+            status = set_link(path, link, dry_run, language)
             if status != "":
                 paths.append(path)
                 print(f"\x1b[32m{rel_path} {status}\x1b[0m")
@@ -212,6 +225,14 @@ def main():
         required=False,
         default="",
         help='page name in the format "platform/command.md"',
+    )
+    parser.add_argument(
+        "-l",
+        "--language",
+        type=str,
+        required=False,
+        default="",
+        help='language in the format "fr" or "pt_BR"',
     )
     parser.add_argument(
         "-s",
@@ -258,7 +279,7 @@ def main():
 
         for path in target_paths:
             rel_path = "/".join(path.parts[-3:])
-            status = set_link(path, args.link)
+            status = set_link(path, args.link, args.dry_run, args.language)
             if status != "":
                 print(f"\x1b[32m{rel_path} {status}\x1b[0m")
 
@@ -277,7 +298,9 @@ def main():
             for command in commands:
                 link = get_link(root / "pages" / command)
                 if link != "":
-                    target_paths += sync(root, pages_dirs, command, link, args.dry_run)
+                    target_paths += sync(
+                        root, pages_dirs, command, link, args.dry_run, args.language
+                    )
 
     if args.stage and not args.dry_run and len(target_paths) > 0:
         subprocess.call(["git", "add", *target_paths], cwd=root)
